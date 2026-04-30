@@ -1,0 +1,28 @@
+---
+description: Backend rules for Spring Boot Weather API
+alwaysApply: false
+---
+
+## Tech Stack
+- [cite_start]Java 21 [cite: 308, 441]
+- [cite_start]Spring Boot 3 [cite: 308, 445]
+- [cite_start]Spring Data JPA + MySQL [cite: 324, 448]
+- [cite_start]Spring Security + JWT [cite: 333, 446]
+
+## Architecture & Design
+- [cite_start]**Pattern**: Controller → Service → Repository [cite: 378]
+- [cite_start]**Dependency Injection**: Use Constructor Injection; avoid @Autowired on fields [cite: 444]
+- [cite_start]**DTOs**: Never expose Entities directly; use DTOs for all API responses [cite: 367]
+
+## Entities & DB
+- [cite_start]**Required Entities**: User, FavoriteCity (Watchlist), SearchHistory [cite: 362, 448]
+- [cite_start]**Constraints**: Use BCrypt for password hashing [cite: 357, 431]
+- [cite_start]**Persistence**: Store favorite cities in MySQL [cite: 324, 349]
+
+## API & Integration
+- [cite_start]**Endpoints**: Use RESTful patterns (e.g., /api/weather, /api/favorites) [cite: 323, 441]
+- [cite_start]**External API**: Use OpenWeatherMap API for real-time atmospheric data [cite: 322, 451]
+- [cite_start]**Resilience**: Implement rate limiting and caching to stay within OWM free tier limits [cite: 329, 381]
+
+## Validation & Errors
+- [cite_start]Use `@Valid` in controllers and structured JSON for error responses [cite: 361]

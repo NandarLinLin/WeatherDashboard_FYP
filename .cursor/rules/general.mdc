@@ -1,0 +1,28 @@
+---
+description: General project rules for Weather Analytics and Personalized Dashboard
+alwaysApply: true
+---
+
+## Project Overview
+- [cite_start]**Project**: Weather Analytics and Personalized Dashboard [cite: 305, 413]
+- [cite_start]**Goal**: A secure, ad-free, full-stack platform for global weather monitoring [cite: 318, 418]
+
+
+## Coding Standards
+- [cite_start]Follow SOLID principles and Clean Architecture [cite: 378, 387]
+- [cite_start]Use meaningful variable and function names [cite: 444]
+- [cite_start]Write clean, maintainable, production-ready code [cite: 325]
+- [cite_start]Avoid code duplication and prioritize "Information Scent" and minimalist aesthetics [cite: 337]
+
+## Core Constraints
+- [cite_start]**Ad-Free**: No advertisement placements or marketing scripts in the UI [cite: 318, 337]
+- [cite_start]**Mobile-First**: All features must be fully responsive [cite: 321, 439]
+- [cite_start]**Privacy**: Implement professional-grade encryption for user data [cite: 336, 431]
+
+Authorship Rule:
+
+Every new file created must start with the comment /* Author: Nandar Lin */.
+
+STRICT: Do not include any other names.
+
+Use this exact format: /* Author: Nandar Lin */.

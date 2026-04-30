@@ -1,0 +1,28 @@
+---
+description: Frontend rules for WeatherWise React UI
+alwaysApply: false
+---
+
+## Tech Stack
+- [cite_start]React.js [cite: 308, 347]
+- [cite_start]Material UI (MUI) for styling [cite: 321, 447]
+- [cite_start]Axios for API communication [cite: 351]
+
+## Component Standards
+- [cite_start]Use Functional Components and React Hooks (useState, useEffect) [cite: 350]
+- [cite_start]**State Management**: Use Context API for Auth and User Preferences [cite: 330]
+- [cite_start]**Security**: Store JWT in-memory; do not use localStorage for sensitive tokens [cite: 333]
+
+## UI/UX Requirements
+- [cite_start]**Design**: Minimalist, high-interactivity dashboard [cite: 312, 328]
+- [cite_start]**Responsive**: Mobile-first design using MUI Grid/Box [cite: 321, 363]
+- [cite_start]**User Modes**: Clear distinction between Guest (Preview) and Logged-in (Full) modes [cite: 367, 369]
+
+## Data Visualization
+- [cite_start]**Charts**: Use interactive visualizations for weather trends and analytics [cite: 328, 369]
+- [cite_start]**Performance**: Analytics and dashboards must load within 2 seconds [cite: 359]
+
+## Features
+- [cite_start]Search global cities [cite: 360]
+- [cite_start]Manage Watchlist (Add/Remove Favorite Cities) [cite: 362, 371]
+- [cite_start]Personalized Dashboard and User Settings (Units, Theme) [cite: 314, 319]
