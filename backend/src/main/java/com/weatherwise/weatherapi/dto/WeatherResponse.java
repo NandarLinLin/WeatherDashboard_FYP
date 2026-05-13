@@ -18,7 +18,11 @@ public record WeatherResponse(
   Integer rainChancePercent,
   Double uvIndex,
   Double windSpeedMetersPerSecond,
+  /** OpenWeather {@code wind.speed} (m/s with {@code units=metric}). */
+  Double windSpeed,
   Integer visibilityMeters,
+  /** Horizontal visibility in km (OpenWeather {@code visibility} in meters ÷ 1000). */
+  Double visibility,
   List<WeatherForecastDay> forecast,
   List<WeatherForecastHour> hourlyForecast
 ) {}

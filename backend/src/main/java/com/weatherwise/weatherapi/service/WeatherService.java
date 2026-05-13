@@ -53,14 +53,12 @@ public class WeatherService {
         .retrieve()
         .body(OpenWeatherCurrentResponse.class);
 
-      OpenWeatherForecastResponse forecastResponse = restClient.get()
-        .uri("/forecast?q={city}&appid={key}&units=metric", encodedCity, apiKey)
-        .retrieve()
-        .body(OpenWeatherForecastResponse.class);
-
       if (response == null || response.main() == null || response.sys() == null) {
         throw new IllegalStateException("Weather provider returned an empty response");
       }
+
+      // 5-day/3-hour forecast is optional: if it fails, still return current conditions (used by favorites list).
+      OpenWeatherForecastResponse forecastResponse = fetchForecastOrNull(encodedCity);
 
       String description = null;
       String conditionMain = "Unknown";
@@ -80,8 +78,12 @@ public class WeatherService {
       Double uvIndex = fetchUvIndex(response.coord());
       if (rainChancePercent == null) rainChancePercent = 0;
 
-      Double windSpeed = response.wind() != null ? response.wind().speed() : null;
+      Double windMetersPerSecond = response.wind() != null ? response.wind().speed() : null;
       Integer visibilityMeters = response.visibility();
+      Double visibilityKilometers = null;
+      if (visibilityMeters != null) {
+        visibilityKilometers = visibilityMeters / 1000.0;
+      }
 
       int timezoneOffsetSeconds = 0;
       if (response.timezone() != null) {
@@ -102,8 +104,10 @@ public class WeatherService {
         response.sys().sunset(),
         rainChancePercent,
         uvIndex,
-        windSpeed,
+        windMetersPerSecond,
+        windMetersPerSecond,
         visibilityMeters,
+        visibilityKilometers,
         dailyForecast,
         hourlyForecast
       );
@@ -113,6 +117,17 @@ public class WeatherService {
         throw new CityNotFoundException(city);
       }
       throw ex;
+    }
+  }
+
+  private OpenWeatherForecastResponse fetchForecastOrNull(String encodedCity) {
+    try {
+      return restClient.get()
+        .uri("/forecast?q={city}&appid={key}&units=metric", encodedCity, apiKey)
+        .retrieve()
+        .body(OpenWeatherForecastResponse.class);
+    } catch (Exception ignored) {
+      return null;
     }
   }
 

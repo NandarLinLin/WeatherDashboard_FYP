@@ -3,6 +3,11 @@ package com.weatherwise.weatherapi.dto.auth;
 
 public record LoginResponse(
   String token,
-  UserProfileResponse user
-) {}
+  UserDTO user,
+  String profileUpdateMessage
+) {
+  public LoginResponse(String token, UserDTO user) {
+    this(token, user, null);
+  }
+}
 

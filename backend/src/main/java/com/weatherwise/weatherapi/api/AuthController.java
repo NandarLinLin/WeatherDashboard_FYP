@@ -4,7 +4,7 @@ package com.weatherwise.weatherapi.api;
 import com.weatherwise.weatherapi.dto.auth.LoginRequest;
 import com.weatherwise.weatherapi.dto.auth.LoginResponse;
 import com.weatherwise.weatherapi.dto.auth.RegisterRequest;
-import com.weatherwise.weatherapi.dto.auth.UserProfileResponse;
+import com.weatherwise.weatherapi.dto.auth.UserDTO;
 import com.weatherwise.weatherapi.model.User;
 import com.weatherwise.weatherapi.repository.UserRepository;
 import com.weatherwise.weatherapi.security.JwtService;
@@ -50,9 +50,9 @@ public class AuthController {
 
   @PostMapping("/register")
   @ResponseStatus(HttpStatus.CREATED)
-  public UserProfileResponse register(@Valid @RequestBody RegisterRequest request) {
+  public UserDTO register(@Valid @RequestBody RegisterRequest request) {
     User user = userService.registerUser(request.email(), request.password(), request.fullName());
-    return new UserProfileResponse(user.getId(), user.getEmail(), user.getFullName());
+    return UserService.toUserDto(user);
   }
 
   @PostMapping("/login")
@@ -67,11 +67,11 @@ public class AuthController {
       .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
     String token = jwtService.generateToken(email);
-    return new LoginResponse(token, new UserProfileResponse(user.getId(), user.getEmail(), user.getFullName()));
+    return new LoginResponse(token, UserService.toUserDto(user));
   }
 
   @GetMapping("/me")
-  public UserProfileResponse me(Principal principal) {
+  public UserDTO me(Principal principal) {
     if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
       throw new IllegalArgumentException("Unauthenticated request");
     }
@@ -79,7 +79,7 @@ public class AuthController {
     User user = userRepository.findByEmailIgnoreCase(principal.getName().trim())
       .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-    return new UserProfileResponse(user.getId(), user.getEmail(), user.getFullName());
+    return UserService.toUserDto(user);
   }
 
   @ExceptionHandler(AuthenticationException.class)

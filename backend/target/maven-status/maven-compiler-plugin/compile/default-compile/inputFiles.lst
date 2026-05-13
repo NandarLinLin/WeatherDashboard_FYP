@@ -1,7 +1,9 @@
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/backend/WeatherWiseBackendApplication.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/WeatherApiApplication.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/api/AuthController.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/api/FavoritesController.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/api/HealthController.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/api/UserController.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/api/WeatherController.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/config/SecurityConfig.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/config/WebConfig.java
@@ -11,9 +13,12 @@
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/auth/LoginRequest.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/auth/LoginResponse.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/auth/RegisterRequest.java
-/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/auth/UserProfileResponse.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/auth/UserDTO.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/favorites/CreateFavoriteCityRequest.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/favorites/FavoriteCityResponse.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/user/UpdateHomeCityRequest.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/user/UpdateUserProfileRequest.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/dto/user/UpdateUserSettingsRequest.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/model/FavoriteCity.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/model/User.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/repository/FavoriteCityRepository.java
@@ -22,6 +27,9 @@
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/security/JwtAuthenticationFilter.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/security/JwtService.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/service/FavoriteCityService.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/service/SevereWeatherConditions.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/service/SevereWeatherEmailScheduler.java
+/Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/service/UserProfilePhotoStorage.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/service/UserService.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/service/WeatherService.java
 /Users/nandar/UOR/WeatherWiseFYP/backend/src/main/java/com/weatherwise/weatherapi/service/openweather/OpenWeatherCurrentResponse.java

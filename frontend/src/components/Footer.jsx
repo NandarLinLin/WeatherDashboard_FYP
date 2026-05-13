@@ -1,44 +1,48 @@
 /* Author: Nandar Lin */
 
-import { Box, Container, Link, Stack, Typography } from '@mui/material'
+import { Box, Container, Typography } from '@mui/material'
 
-export default function Footer({ isLoggedIn = false }) {
+export default function Footer() {
   return (
     <Box
       component="footer"
       sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
         borderTop: '1px solid',
         borderColor: 'divider',
         bgcolor: 'background.paper',
+        py: { xs: 3.5, sm: 4 },
       }}
     >
-      <Container maxWidth="lg" sx={{ py: 3 }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={{ xs: 1.5, sm: 2 }}
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
-          justifyContent="space-between"
+      <Container
+        maxWidth="lg"
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          textAlign: 'center',
+          width: '100%',
+          gap: 1.5,
+        }}
+      >
+        <Typography sx={{ fontWeight: 800, textAlign: 'center', width: '100%' }}>
+          WeatherWise
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={(theme) => ({
+            color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.55)' : '#666666',
+            textAlign: 'center',
+            maxWidth: 720,
+            lineHeight: 1.6,
+            width: '100%',
+          })}
         >
-          <Typography sx={{ fontWeight: 800 }}>WeatherWise</Typography>
-          <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-            <Link href="/privacy" underline="hover" sx={{ fontWeight: 600 }}>
-              Privacy
-            </Link>
-            <Link href="/terms" underline="hover" sx={{ fontWeight: 600 }}>
-              Terms
-            </Link>
-            <Link href="/contact" underline="hover" sx={{ fontWeight: 600 }}>
-              Contact
-            </Link>
-          </Stack>
-        </Stack>
-
-        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1.5 }}>
           © 2026 WeatherWise — Smart weather analytics for everyone.
-          {isLoggedIn ? ' Signed in.' : ''}
         </Typography>
       </Container>
     </Box>
   )
 }
-

@@ -1,8 +1,7 @@
 /* Author: Nandar Lin */
 
 import { useMemo, useState } from 'react'
-import { Box, Divider, Link, Paper, Stack, TextField, Typography } from '@mui/material'
-import { Button } from '@mui/material'
+import { Box, Button, Link, Paper, Stack, TextField, Typography } from '@mui/material'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { getApiErrorMessage, registerUser } from '../lib/favoritesApi.js'
 
@@ -152,31 +151,9 @@ export default function RegisterPage() {
             >
               {isSubmitting ? 'Creating...' : 'Create account'}
             </Button>
-
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ py: 0.5 }}>
-              <Divider sx={{ flexGrow: 1 }} />
-              <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                or
-              </Typography>
-              <Divider sx={{ flexGrow: 1 }} />
-            </Stack>
-
-            <Button
-              variant="outlined"
-              sx={{
-                borderRadius: 999,
-                py: 1.15,
-                fontWeight: 900,
-                borderColor: 'divider',
-                color: 'text.primary',
-                '&:hover': { borderColor: 'text.primary', bgcolor: 'transparent' },
-              }}
-            >
-              Continue with Google
-            </Button>
           </Stack>
 
-          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center', mt: 2 }}>
             Already have an account?{' '}
             <Link component={RouterLink} to="/login" underline="hover" sx={{ fontWeight: 800 }}>
               Log in

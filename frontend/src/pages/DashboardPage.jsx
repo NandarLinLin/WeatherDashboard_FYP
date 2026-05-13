@@ -1,7 +1,9 @@
 /* Author: Nandar Lin */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
+import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import WbSunnyOutlinedIcon from '@mui/icons-material/WbSunnyOutlined'
 import NightsStayOutlinedIcon from '@mui/icons-material/NightsStayOutlined'
 import UmbrellaOutlinedIcon from '@mui/icons-material/UmbrellaOutlined'
@@ -18,20 +20,29 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  Alert,
   Box,
   Button,
   CircularProgress,
+  IconButton,
   InputAdornment,
   Paper,
-  Skeleton,
   Stack,
   TextField,
+  Tooltip as MuiTooltip, // <--- Rename it here
   Typography,
 } from '@mui/material'
 
 import CityNotFound from '../components/CityNotFound.jsx'
 import { fetchCityWeather } from '../lib/weatherApi.js'
-import { fetchFavoriteCities, getApiErrorMessage, removeFavoriteCity, saveFavoriteCity } from '../lib/favoritesApi.js'
+import {
+  fetchFavoriteCities,
+  getApiErrorMessage,
+  putUserHomeCity,
+  removeFavoriteCity,
+  saveFavoriteCity,
+} from '../lib/favoritesApi.js'
+import { formatTemperature, temperatureChartValue } from '../lib/temperatureUnits.js'
 import { useAuth } from '../context/useAuth.js'
 
 /**
@@ -77,15 +88,110 @@ function formatWindSpeedMetersPerSecond(speedMetersPerSecond) {
   return `${Math.round(kmh)} km/h`
 }
 
-/** Row height in favorites list; container fits exactly 3 rows + gaps (see theme in list Box sx). */
+const SEVERE_DESCRIPTION_KEYWORDS = ['storm', 'hurricane', 'tornado']
+
+/**
+ * Severe if the description mentions storm/hurricane/tornado (case-insensitive) or
+ * temperature is outside (-10°C, 40°C) — API values are metric (°C).
+ * @param {{ weatherDescription?: string, description?: string, temperatureCelsius?: number|null }} weatherData
+ */
+function checkSevereWeather(weatherData) {
+  if (!weatherData || typeof weatherData !== 'object') return false
+  const raw =
+    typeof weatherData.weatherDescription === 'string'
+      ? weatherData.weatherDescription
+      : typeof weatherData.description === 'string'
+        ? weatherData.description
+        : ''
+  const desc = raw.toLowerCase()
+  if (SEVERE_DESCRIPTION_KEYWORDS.some((kw) => desc.includes(kw))) return true
+  const temp = weatherData.temperatureCelsius
+  const t = typeof temp === 'number' ? temp : Number(temp)
+  if (Number.isFinite(t) && (t > 40 || t < -10)) return true
+  return false
+}
+
+/** Home-city snapshot: true when conditions qualify as severe (does not read user settings). */
+function evaluateHomeCitySevereWeatherAlert(weatherData) {
+  return checkSevereWeather(weatherData)
+}
+
+/** User-facing severe alert from data + severe-weather notifications toggle. */
+function showSmartSevereWeatherAlert(isSevereWeather, severeWeatherAlertsEnabled) {
+  return Boolean(severeWeatherAlertsEnabled) && Boolean(isSevereWeather)
+}
+
+const GLANCE_PHOTO_TEXT_SHADOW = '1px 1px 4px rgba(0, 0, 0, 0.6)'
+
+/** Row height in recent-searches sidebar list; container fits exactly 3 rows + gaps (see theme in list Box sx). */
 const FAVORITE_LIST_ROW_PX = 72
 const FAVORITE_LIST_VISIBLE_ROWS = 3
+
+const RECENT_SEARCHES_STORAGE_KEY_PREFIX = 'weatherwise_recent_searches_'
+const MAX_RECENT_SEARCHES = 5
+
+function parseRecentSearchesFromStorage(storageKey) {
+  try {
+    const key = typeof storageKey === 'string' ? storageKey : ''
+    if (!key) return []
+    const raw = localStorage.getItem(key)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((s) => typeof s === 'string' && s.trim())
+      .map((s) => s.trim())
+  } catch {
+    return []
+  }
+}
+
+/** Dedupe by case-insensitive name, move latest to front, cap length. */
+function buildNextRecentSearches(prev, cityName) {
+  const name = typeof cityName === 'string' ? cityName.trim() : ''
+  if (!name) return prev
+  const norm = name.toLowerCase()
+  const filtered = prev.filter((c) => (typeof c === 'string' ? c : '').trim().toLowerCase() !== norm)
+  return [name, ...filtered].slice(0, MAX_RECENT_SEARCHES)
+}
+
+/** Recharts line-chart tooltip: time + temp, high-contrast on white. */
+function CustomTooltip({ active, payload, useFahrenheit }) {
+  if (!active || !payload?.length) return null
+  const row = payload[0]?.payload
+  const timeLabel = row?.time12 ?? row?.time
+  const raw = row?.temperatureDisplay ?? payload[0]?.value
+  const n = Math.round(Number(raw))
+  if (!Number.isFinite(n) || timeLabel == null) return null
+  const deg = useFahrenheit ? '°F' : '°C'
+  return (
+    <div
+      style={{
+        backgroundColor: '#FFFFFF',
+        color: '#121212',
+        border: '1px solid #e5e7eb',
+        borderRadius: 8,
+        padding: 10,
+        fontSize: 13,
+        fontWeight: 600,
+        fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+        lineHeight: 1.45,
+        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)',
+      }}
+    >
+      <div>Time: {String(timeLabel)}</div>
+      <div>Temp: {n}{deg}</div>
+    </div>
+  )
+}
 
 export default function DashboardPage({ isLoggedIn = false }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { authHeader } = useAuth()
-  const hasAutoLoadedRef = useRef(false)
+  const { authHeader, useFahrenheit, user, applyServerProfile, darkMode } = useAuth()
+  const isGuest = !isLoggedIn
+  const guestDefaultWeatherDoneRef = useRef(false)
+  const userDefaultWeatherKeyRef = useRef(null)
   const saveSuccessTimeoutRef = useRef(null)
   const [cityQuery, setCityQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
@@ -94,12 +200,23 @@ export default function DashboardPage({ isLoggedIn = false }) {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [isUpdatingHomeCity, setIsUpdatingHomeCity] = useState(false)
+  const [homeCityError, setHomeCityError] = useState(null)
   const [favoriteCities, setFavoriteCities] = useState([])
-  const [isFavoritesLoading, setIsFavoritesLoading] = useState(false)
-  const [favoritesError, setFavoritesError] = useState(null)
+  const storageKey = useMemo(() => {
+    const rawId = user?.email ?? (user?.id != null ? String(user.id) : null)
+    const id = typeof rawId === 'string' ? rawId.trim() : ''
+    if (!isLoggedIn || !id) return `${RECENT_SEARCHES_STORAGE_KEY_PREFIX}guest`
+    return `${RECENT_SEARCHES_STORAGE_KEY_PREFIX}${encodeURIComponent(id)}`
+  }, [isLoggedIn, user?.email, user?.id])
+
+  const [recentSearches, setRecentSearches] = useState([])
+  /** When the dashboard shows a city other than home, we still fetch home conditions for smart alerts. */
+  const [homeCityWeatherForAlert, setHomeCityWeatherForAlert] = useState(null)
+  const [isTestMode, setIsTestMode] = useState(false)
   const [weatherSnapshot, setWeatherSnapshot] = useState({
     cityName: 'London',
-    temperature: '25°C',
+    temperatureCelsius: null,
     rainChance: '30%',
     windSpeed: '—',
     humidity: '62%',
@@ -116,7 +233,7 @@ export default function DashboardPage({ isLoggedIn = false }) {
 
   const {
     cityName,
-    temperature,
+    temperatureCelsius,
     rainChance,
     windSpeed,
     humidity,
@@ -170,17 +287,10 @@ export default function DashboardPage({ isLoggedIn = false }) {
 
   const shouldShowError = Boolean(searchError)
 
-  const loadFavorites = async ({ silent = false } = {}) => {
+  const loadFavorites = async () => {
     if (!isLoggedIn) {
       setFavoriteCities([])
-      setFavoritesError(null)
-      setIsFavoritesLoading(false)
       return
-    }
-
-    if (!silent) {
-      setIsFavoritesLoading(true)
-      setFavoritesError(null)
     }
 
     try {
@@ -195,15 +305,37 @@ export default function DashboardPage({ isLoggedIn = false }) {
         navigate('/login', { replace: true, state: { from: '/dashboard' } })
         return
       }
-      setFavoritesError(getApiErrorMessage(error, 'Could not load favorites.'))
-    } finally {
-      if (!silent) setIsFavoritesLoading(false)
+      /* Keep last loaded favorites if refresh fails (no sidebar error UI). */
     }
   }
 
   useEffect(() => {
     Promise.resolve().then(() => loadFavorites())
   }, [isLoggedIn, authHeader])
+
+  useLayoutEffect(() => {
+    if (!isLoggedIn) {
+      setRecentSearches([])
+      return
+    }
+    setRecentSearches(parseRecentSearchesFromStorage(storageKey))
+  }, [isLoggedIn, storageKey])
+
+  const addRecentSearch = useCallback(
+    (cityName) => {
+      if (!isLoggedIn) return
+      setRecentSearches((prev) => {
+        const next = buildNextRecentSearches(prev, cityName)
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(next))
+        } catch {
+          /* ignore quota / private mode */
+        }
+        return next
+      })
+    },
+    [isLoggedIn, storageKey],
+  )
 
   useEffect(() => {
     return () => {
@@ -223,8 +355,9 @@ export default function DashboardPage({ isLoggedIn = false }) {
       return {
         ...current,
         cityName: weather?.city ?? fallbackCityName,
-        temperature:
-          Number.isFinite(weather?.temperatureCelsius) ? `${Math.round(weather.temperatureCelsius)}°C` : current.temperature,
+        temperatureCelsius: Number.isFinite(weather?.temperatureCelsius)
+          ? weather.temperatureCelsius
+          : current.temperatureCelsius,
         description: weather?.description ?? current.description,
         icon: weather?.icon ?? current.icon,
         humidity:
@@ -259,9 +392,13 @@ export default function DashboardPage({ isLoggedIn = false }) {
     })
   }
 
-  /** Load weather for a city passed via navigation (Navbar or links). Runs whenever `state.searchCity` is present. */
+  /** Load weather for a city passed via navigation (Navbar, landing search, favorites). Runs when `searchCity` or `initialCity` is present. */
   useEffect(() => {
-    const city = typeof location.state?.searchCity === 'string' ? location.state.searchCity.trim() : ''
+    const fromNav =
+      typeof location.state?.searchCity === 'string' ? location.state.searchCity.trim() : ''
+    const fromLanding =
+      typeof location.state?.initialCity === 'string' ? location.state.initialCity.trim() : ''
+    const city = fromNav || fromLanding
     if (!city) return
 
     queueMicrotask(() => {
@@ -269,11 +406,17 @@ export default function DashboardPage({ isLoggedIn = false }) {
       setCityQuery(city)
       setIsInitialLoading(true)
       setSearchError(null)
-      hasAutoLoadedRef.current = true
+      guestDefaultWeatherDoneRef.current = true
+      if (isLoggedIn && user?.id != null) {
+        userDefaultWeatherKeyRef.current = `user:${user.id}`
+      }
 
       fetchCityWeather(city)
         .then((weather) => {
           applyWeatherSnapshot(weather, city)
+          const resolved =
+            typeof weather?.city === 'string' && weather.city.trim() ? weather.city.trim() : city
+          addRecentSearch(resolved)
         })
         .catch((error) => {
           setSearchError(error)
@@ -282,24 +425,62 @@ export default function DashboardPage({ isLoggedIn = false }) {
           setIsInitialLoading(false)
         })
     })
-  }, [location.key, navigate])
+  }, [location.key, navigate, isLoggedIn, user?.id, addRecentSearch])
 
-  /** Default city on first visit when no `searchCity` was passed in location state (handled above). */
+  useEffect(() => {
+    if (isLoggedIn) {
+      guestDefaultWeatherDoneRef.current = false
+    } else {
+      userDefaultWeatherKeyRef.current = null
+    }
+  }, [isLoggedIn])
+
+  /** Default city on first visit when no city was passed in location state (handled above). */
   useEffect(() => {
     Promise.resolve().then(() => {
-      const routeCity = typeof location.state?.searchCity === 'string' ? location.state.searchCity.trim() : ''
+      const fromNav =
+        typeof location.state?.searchCity === 'string' ? location.state.searchCity.trim() : ''
+      const fromLanding =
+        typeof location.state?.initialCity === 'string' ? location.state.initialCity.trim() : ''
+      const routeCity = fromNav || fromLanding
       if (routeCity) return
 
-      if (hasAutoLoadedRef.current) return
+      if (isLoggedIn && user?.id == null) return
 
-      if (isLoggedIn && isFavoritesLoading) return
+      if (isLoggedIn && user?.id != null) {
+        const sessionKey = `user:${user.id}`
+        if (userDefaultWeatherKeyRef.current === sessionKey) return
+        userDefaultWeatherKeyRef.current = sessionKey
 
-      const firstFavoriteCity = favoriteCities?.[0]?.cityName
-      const defaultCity = (
-        typeof firstFavoriteCity === 'string' && firstFavoriteCity.trim() ? firstFavoriteCity : 'London'
-      ).trim()
+        const initialCity =
+          typeof user.homeCity === 'string' && user.homeCity.trim() ? user.homeCity.trim() : 'London'
 
-      hasAutoLoadedRef.current = true
+        setCityQuery(initialCity)
+        setIsInitialLoading(true)
+        setSearchError(null)
+
+        fetchCityWeather(initialCity)
+          .then((weather) => {
+            applyWeatherSnapshot(weather, initialCity)
+            const resolved =
+              typeof weather?.city === 'string' && weather.city.trim()
+                ? weather.city.trim()
+                : initialCity
+            addRecentSearch(resolved)
+          })
+          .catch((error) => {
+            setSearchError(error)
+          })
+          .finally(() => {
+            setIsInitialLoading(false)
+          })
+        return
+      }
+
+      if (guestDefaultWeatherDoneRef.current) return
+      guestDefaultWeatherDoneRef.current = true
+
+      const defaultCity = 'London'
       setCityQuery(defaultCity)
       setIsInitialLoading(true)
       setSearchError(null)
@@ -307,6 +488,11 @@ export default function DashboardPage({ isLoggedIn = false }) {
       fetchCityWeather(defaultCity)
         .then((weather) => {
           applyWeatherSnapshot(weather, defaultCity)
+          const resolved =
+            typeof weather?.city === 'string' && weather.city.trim()
+              ? weather.city.trim()
+              : defaultCity
+          addRecentSearch(resolved)
         })
         .catch((error) => {
           setSearchError(error)
@@ -315,7 +501,12 @@ export default function DashboardPage({ isLoggedIn = false }) {
           setIsInitialLoading(false)
         })
     })
-  }, [isLoggedIn, isFavoritesLoading, favoriteCities, navigate, location.state])
+  }, [isLoggedIn, user?.id, user?.homeCity, navigate, location.state, addRecentSearch])
+
+  const trimmedHomeCity = useMemo(() => {
+    const raw = typeof user?.homeCity === 'string' ? user.homeCity.trim() : ''
+    return raw || ''
+  }, [user])
 
   const normalizedActiveCity = useMemo(() => (cityName || '').trim().toLowerCase(), [cityName])
   const matchingFavorite = useMemo(() => {
@@ -323,10 +514,59 @@ export default function DashboardPage({ isLoggedIn = false }) {
     return favoriteCities.find((fav) => (fav?.cityName || '').trim().toLowerCase() === normalizedActiveCity) ?? null
   }, [favoriteCities, normalizedActiveCity])
 
+  useEffect(() => {
+    if (!isLoggedIn || !trimmedHomeCity || !user?.severeWeatherAlerts) {
+      queueMicrotask(() => setHomeCityWeatherForAlert(null))
+      return
+    }
+    const viewingHome = normalizedActiveCity === trimmedHomeCity.toLowerCase()
+    if (viewingHome) {
+      queueMicrotask(() => setHomeCityWeatherForAlert(null))
+      return
+    }
+    let cancelled = false
+    fetchCityWeather(trimmedHomeCity)
+      .then((weather) => {
+        if (cancelled) return
+        setHomeCityWeatherForAlert({
+          description: typeof weather?.description === 'string' ? weather.description : '',
+          temperatureCelsius: Number.isFinite(weather?.temperatureCelsius) ? weather.temperatureCelsius : null,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setHomeCityWeatherForAlert(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isLoggedIn, trimmedHomeCity, normalizedActiveCity, user?.severeWeatherAlerts])
+
+  const homeCityWeatherDataForSevereCheck = useMemo(() => {
+    if (!trimmedHomeCity) return null
+    const viewingHome = normalizedActiveCity === trimmedHomeCity.toLowerCase()
+    return {
+      weatherDescription: viewingHome ? description : homeCityWeatherForAlert?.description ?? '',
+      temperatureCelsius: viewingHome ? temperatureCelsius : homeCityWeatherForAlert?.temperatureCelsius ?? null,
+    }
+  }, [
+    trimmedHomeCity,
+    normalizedActiveCity,
+    description,
+    temperatureCelsius,
+    homeCityWeatherForAlert,
+  ])
+
+  const isSevereWeather = evaluateHomeCitySevereWeatherAlert(homeCityWeatherDataForSevereCheck)
+  const severeAlertsOn = Boolean(user?.severeWeatherAlerts)
+  const showFromHomeConditions = showSmartSevereWeatherAlert(isSevereWeather, severeAlertsOn)
+  const showSevereWeatherBanner =
+    isLoggedIn && severeAlertsOn && (showFromHomeConditions || isTestMode)
+
   const runWeatherSearch = async (trimmedQuery) => {
     setIsSearching(true)
     setSearchError(null)
     setSaveError(null)
+    setHomeCityError(null)
     if (saveSuccessTimeoutRef.current) {
       clearTimeout(saveSuccessTimeoutRef.current)
       saveSuccessTimeoutRef.current = null
@@ -336,6 +576,9 @@ export default function DashboardPage({ isLoggedIn = false }) {
     try {
       const weather = await fetchCityWeather(trimmedQuery)
       applyWeatherSnapshot(weather, trimmedQuery)
+      const resolved =
+        typeof weather?.city === 'string' && weather.city.trim() ? weather.city.trim() : trimmedQuery
+      addRecentSearch(resolved)
     } catch (error) {
       setSearchError(error)
     } finally {
@@ -343,22 +586,18 @@ export default function DashboardPage({ isLoggedIn = false }) {
     }
   }
 
-  const handleSearch = async () => {
-    const trimmedQuery = cityQuery.trim()
+  const handleSearch = async (overrideCity) => {
+    const fromOverride = typeof overrideCity === 'string' && overrideCity.trim() !== ''
+    const trimmedQuery = fromOverride ? overrideCity.trim() : cityQuery.trim()
     if (!trimmedQuery) return
+    if (fromOverride) setCityQuery(trimmedQuery)
     await runWeatherSearch(trimmedQuery)
-  }
-
-  const handleFavoriteCityClick = async (rawName) => {
-    const name = typeof rawName === 'string' ? rawName.trim() : ''
-    if (!name) return
-    setCityQuery(name)
-    await runWeatherSearch(name)
   }
 
   const handleRetry = () => {
     setCityQuery('')
     setSearchError(null)
+    setHomeCityError(null)
   }
 
   const handleSaveCity = async () => {
@@ -391,11 +630,35 @@ export default function DashboardPage({ isLoggedIn = false }) {
         saveSuccessTimeoutRef.current = null
         setSaveSuccess(false)
       }, 3000)
-      await loadFavorites({ silent: true })
+      await loadFavorites()
     } catch (error) {
       setSaveError(getApiErrorMessage(error, 'Could not save this city. Please try again.'))
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const isActiveHomeCity =
+    Boolean(trimmedHomeCity) && normalizedActiveCity === trimmedHomeCity.toLowerCase()
+  const myCityButtonLabel = isActiveHomeCity
+    ? 'My Home City'
+    : trimmedHomeCity
+      ? 'Change My City'
+      : 'Set as My City'
+
+  const handleSetHomeCity = async () => {
+    if (!isLoggedIn || !authHeader) return
+    const name = (cityName || '').trim()
+    if (!name || isActiveHomeCity) return
+    setIsUpdatingHomeCity(true)
+    setHomeCityError(null)
+    try {
+      const profile = await putUserHomeCity({ authHeader, city: name })
+      applyServerProfile(profile)
+    } catch (error) {
+      setHomeCityError(getApiErrorMessage(error, 'Could not update home city. Please try again.'))
+    } finally {
+      setIsUpdatingHomeCity(false)
     }
   }
 
@@ -415,7 +678,7 @@ export default function DashboardPage({ isLoggedIn = false }) {
     try {
       await removeFavoriteCity({ favoriteId: matchingFavorite.id, authHeader })
       setFavoriteCities((current) => current.filter((fav) => fav?.id !== matchingFavorite.id))
-      await loadFavorites({ silent: true })
+      await loadFavorites()
     } catch (error) {
       setSaveError(getApiErrorMessage(error, 'Could not remove this city. Please try again.'))
     } finally {
@@ -443,51 +706,69 @@ export default function DashboardPage({ isLoggedIn = false }) {
     return forecast.slice(0, 5).map((item, index) => ({
       key: item?.dateIso ?? `${item?.dayLabel ?? 'day'}-${index}`,
       day: item?.dayLabel ?? '—',
-      high:
-        typeof item?.temperatureMaxCelsius === 'number'
-          ? `${Math.round(item.temperatureMaxCelsius)}°C`
-          : '—',
-      low:
-        typeof item?.temperatureMinCelsius === 'number'
-          ? `${Math.round(item.temperatureMinCelsius)}°C`
-          : '—',
+      high: formatTemperature(item?.temperatureMaxCelsius, useFahrenheit),
+      low: formatTemperature(item?.temperatureMinCelsius, useFahrenheit),
       icon: item?.icon ?? null,
       description: item?.description ?? '',
     }))
-  }, [forecast])
+  }, [forecast, useFahrenheit])
 
   const hourlyTemperatureSeries = useMemo(() => {
     if (!Array.isArray(hourlyForecast) || hourlyForecast.length === 0) return []
     return hourlyForecast
-      .map((item, index) => ({
-        key: item?.epochSeconds ?? `${item?.timeLabel ?? 'hour'}-${index}`,
-        time:
-          typeof item?.epochSeconds === 'number'
-            ? formatCityTime(item.epochSeconds, timezoneOffsetSeconds, {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-              })
-            : '—',
-        time12:
-          typeof item?.epochSeconds === 'number'
-            ? formatCityTime(item.epochSeconds, timezoneOffsetSeconds, {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true,
-              })
-            : '—',
-        temperatureCelsius: Number(item?.temperatureCelsius),
-      }))
-      .filter((item) => Number.isFinite(item.temperatureCelsius))
-  }, [hourlyForecast, timezoneOffsetSeconds])
+      .map((item, index) => {
+        const c = Number(item?.temperatureCelsius)
+        const display = temperatureChartValue(c, useFahrenheit)
+        return {
+          key: item?.epochSeconds ?? `${item?.timeLabel ?? 'hour'}-${index}`,
+          time:
+            typeof item?.epochSeconds === 'number'
+              ? formatCityTime(item.epochSeconds, timezoneOffsetSeconds, {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+                })
+              : '—',
+          time12:
+            typeof item?.epochSeconds === 'number'
+              ? formatCityTime(item.epochSeconds, timezoneOffsetSeconds, {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                })
+              : '—',
+          temperatureCelsius: c,
+          temperatureDisplay: display,
+        }
+      })
+      .filter((item) => Number.isFinite(item.temperatureCelsius) && item.temperatureDisplay != null)
+  }, [hourlyForecast, timezoneOffsetSeconds, useFahrenheit])
 
-  const cardSx = {
-    bgcolor: 'common.white',
-    borderRadius: '24px',
-    boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.05)',
-    border: '1px solid rgba(15, 23, 42, 0.06)',
-  }
+  const tempUnitSuffix = useFahrenheit ? 'F' : 'C'
+
+  const cardSx = useMemo(
+    () => ({
+      bgcolor: darkMode ? '#1e1e1e' : '#ffffff',
+      borderRadius: '24px',
+      boxShadow: darkMode ? '0px 4px 20px rgba(0, 0, 0, 0.45)' : '0px 4px 20px rgba(0, 0, 0, 0.05)',
+      border: darkMode ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(15, 23, 42, 0.06)',
+    }),
+    [darkMode],
+  )
+
+  const glancePhotoIconDropShadow = 'drop-shadow(1px 1px 3px rgba(0, 0, 0, 0.65))'
+
+  const pageBg = darkMode ? '#121212' : '#ffffff'
+
+  const chartGridStroke = darkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.08)'
+  const chartAxisLineStroke = darkMode ? 'rgba(255, 255, 255, 0.35)' : 'rgba(15, 23, 42, 0.22)'
+  const chartAxisTick = darkMode
+    ? { fill: '#e8eaed', fontSize: 12, fontWeight: 700 }
+    : { fill: '#0f172a', fontSize: 12, fontWeight: 700 }
+  const chartAxisTickY = darkMode
+    ? { fill: '#e8eaed', fontSize: 12, fontWeight: 700 }
+    : { fill: '#0f172a', fontSize: 12, fontWeight: 700 }
+  const chartLineStroke = darkMode ? '#e2e8f0' : '#0f172a'
 
   const metricIconSx = (bgColor, color) => ({
     width: 36,
@@ -513,6 +794,14 @@ export default function DashboardPage({ isLoggedIn = false }) {
     userSelect: 'none',
   }
 
+  /** Guest-only sections: sharper blur per product spec (chart keeps lockedContentSx). */
+  const guestBlurLayerSx = {
+    filter: 'blur(5px)',
+    pointerEvents: 'none',
+    userSelect: 'none',
+    transition: 'filter 180ms ease',
+  }
+
   const lockedOverlaySx = {
     position: 'absolute',
     inset: 0,
@@ -520,8 +809,44 @@ export default function DashboardPage({ isLoggedIn = false }) {
     placeItems: 'center',
     px: 2.5,
     textAlign: 'center',
-    bgcolor: 'rgba(248, 249, 250, 0.35)',
+    bgcolor: darkMode ? 'rgba(18, 18, 18, 0.55)' : 'rgba(248, 249, 250, 0.35)',
     backdropFilter: 'blur(1px)',
+  }
+
+  const guestSectionOverlaySx = {
+    ...lockedOverlaySx,
+    bgcolor: darkMode ? 'rgba(18, 18, 18, 0.42)' : 'rgba(255, 255, 255, 0.5)',
+    backdropFilter: 'blur(2px)',
+  }
+
+  const condition = (
+    weatherSnapshot?.weatherDescription ||
+    weatherSnapshot?.description ||
+    weatherSnapshot?.weather?.[0]?.description ||
+    ''
+  ).toLowerCase()
+
+  let dashboardBgImage =
+    'https://images.unsplash.com/photo-1601297183305-6df142704ea2?w=800&auto=format&fit=crop&q=80'
+
+  if (
+    condition.includes('overcast') ||
+    condition.includes('scattered') ||
+    condition.includes('broken') ||
+    condition.includes('scatter') ||
+    condition.includes('cloud')
+  ) {
+    dashboardBgImage =
+      'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=800&auto=format&fit=crop&q=80'
+  } else if (condition.includes('rain') || condition.includes('drizzle') || condition.includes('shower')) {
+    dashboardBgImage =
+      'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?w=800&auto=format&fit=crop&q=80'
+  }
+
+  const glancePhotoOn = true
+  const glancePhotoTextSx = {
+    color: 'rgba(255, 255, 255, 0.95)',
+    textShadow: GLANCE_PHOTO_TEXT_SHADOW,
   }
 
   return (
@@ -530,7 +855,7 @@ export default function DashboardPage({ isLoggedIn = false }) {
       sx={{
         flexGrow: 1,
         fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-        bgcolor: '#f8f9fa',
+        bgcolor: pageBg,
         py: { xs: 2.5, md: 4 },
         px: { xs: 2, md: 4 },
       }}
@@ -544,7 +869,7 @@ export default function DashboardPage({ isLoggedIn = false }) {
         }}
       >
         <Box sx={{ mb: { xs: 0.25, md: 0.75 } }}>
-          <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: -0.5, mb: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: -0.5, mb: 1, color: 'text.primary' }}>
             Dashboard
           </Typography>
 
@@ -552,7 +877,7 @@ export default function DashboardPage({ isLoggedIn = false }) {
             sx={{
               mt: 2,
               display: 'grid',
-              gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) auto' },
+              gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) auto auto' },
               gap: 1.5,
               alignItems: 'stretch',
               maxWidth: 820,
@@ -567,14 +892,36 @@ export default function DashboardPage({ isLoggedIn = false }) {
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <WbSunnyOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                    <Stack direction="row" alignItems="center" spacing={0.25} sx={{ mr: 0.5 }}>
+                      <WbSunnyOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      <MuiTooltip
+                        title={
+                          trimmedHomeCity
+                            ? `Show weather for ${trimmedHomeCity}`
+                            : 'Set your home city from the Dashboard'
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            type="button"
+                            size="small"
+                            disabled={!trimmedHomeCity}
+                            onClick={() => void handleSearch(user?.homeCity)}
+                            aria-label="Show weather for home city"
+                            sx={{ color: 'text.secondary' }}
+                          >
+                            <HomeRoundedIcon sx={{ fontSize: 22 }} />
+                          </IconButton>
+                        </span>
+                      </MuiTooltip>
+                    </Stack>
                   </InputAdornment>
                 ),
               }}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '24px',
-                  bgcolor: 'common.white',
+                  bgcolor: darkMode ? '#1e1e1e' : '#ffffff',
                   minHeight: 58,
                 },
               }}
@@ -605,6 +952,26 @@ export default function DashboardPage({ isLoggedIn = false }) {
                 'Search'
               )}
             </Button>
+            <Box
+              component="button"
+              type="button"
+              onClick={() => setIsTestMode(!isTestMode)}
+              sx={{
+                borderRadius: '24px',
+                minHeight: 58,
+                px: 1.75,
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                border: '1px solid',
+                borderColor: darkMode ? 'rgba(255, 255, 255, 0.22)' : 'rgba(15, 23, 42, 0.2)',
+                bgcolor: isTestMode ? 'rgba(185, 28, 28, 0.12)' : darkMode ? '#1e1e1e' : '#ffffff',
+                color: darkMode ? '#e2e8f0' : '#0f172a',
+                fontFamily: 'inherit',
+              }}
+            >
+              Toggle Test Alert
+            </Box>
           </Box>
         </Box>
 
@@ -632,9 +999,54 @@ export default function DashboardPage({ isLoggedIn = false }) {
 
             {!shouldShowError ? (
               <Stack spacing="24px" sx={{ height: '100%' }}>
-            <Paper sx={{ ...cardSx, p: 4 }}>
+            <Paper
+              sx={{
+                p: 4,
+                borderRadius: '24px',
+                bgcolor: 'transparent',
+                transition: 'background-image 320ms ease, box-shadow 240ms ease',
+                overflow: 'hidden',
+                boxShadow: '0px 12px 40px rgba(0, 0, 0, 0.22)',
+                border: '1px solid rgba(255, 255, 255, 0.16)',
+              }}
+              style={{
+                backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.35)), url(${dashboardBgImage})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+              }}
+            >
               <Stack spacing={3}>
-                <Typography sx={{ fontWeight: 900, color: 'text.secondary', letterSpacing: 0.4 }}>
+                {showSevereWeatherBanner ? (
+                  <Alert
+                    severity="error"
+                    variant="filled"
+                    icon={<WarningAmberRoundedIcon fontSize="inherit" />}
+                    role="alert"
+                    sx={{
+                      borderRadius: '16px',
+                      py: 1.25,
+                      fontWeight: 700,
+                      boxShadow: (theme) =>
+                        theme.palette.mode === 'dark'
+                          ? '0 10px 28px rgba(0, 0, 0, 0.5)'
+                          : '0 10px 28px rgba(185, 28, 28, 0.35)',
+                    }}
+                  >
+                    <Typography component="div" variant="subtitle1" sx={{ fontWeight: 900, letterSpacing: -0.02 }}>
+                      {isTestMode
+                        ? 'Severe Weather Alert: Hurricane conditions detected (Test Mode Active)'
+                        : `Warning: Severe weather detected in your Home City (${trimmedHomeCity}). Please take necessary precautions!`}
+                    </Typography>
+                  </Alert>
+                ) : null}
+                <Typography
+                  sx={{
+                    fontWeight: 900,
+                    letterSpacing: 0.4,
+                    ...glancePhotoTextSx,
+                  }}
+                >
                   Today at a Glance
                 </Typography>
 
@@ -653,13 +1065,37 @@ export default function DashboardPage({ isLoggedIn = false }) {
                     sx={{ alignItems: 'center', minWidth: 0, flex: 1 }}
                   >
                     <Stack sx={{ minWidth: 0 }}>
-                      <Typography variant="h5" sx={{ color: 'text.secondary', fontWeight: 800, lineHeight: 1.45, mb: 1 }}>
+                      <Typography
+                        variant="h5"
+                        sx={{
+                          ...glancePhotoTextSx,
+                          fontWeight: 800,
+                          lineHeight: 1.45,
+                          mb: 1,
+                        }}
+                      >
                         {cityName}
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600, lineHeight: 1.5, mb: 0.25 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          ...glancePhotoTextSx,
+                          fontWeight: 600,
+                          lineHeight: 1.5,
+                          mb: 0.25,
+                        }}
+                      >
                         {todayDate}
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 650, lineHeight: 1.5, mb: 1.5 }}>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          ...glancePhotoTextSx,
+                          fontWeight: 650,
+                          lineHeight: 1.5,
+                          mb: 1.5,
+                        }}
+                      >
                         Local time: {localTimeLabel}
                       </Typography>
                       <Typography
@@ -668,105 +1104,247 @@ export default function DashboardPage({ isLoggedIn = false }) {
                           lineHeight: 1.12,
                           fontWeight: 900,
                           letterSpacing: -1.2,
+                          ...glancePhotoTextSx,
+                          color: 'rgba(255, 255, 255, 0.98)',
                         }}
                       >
-                        {temperature}
+                        {formatTemperature(temperatureCelsius, useFahrenheit)}
                       </Typography>
                     </Stack>
 
                     <Stack spacing={0.5} alignItems="center" sx={{ minWidth: 96 }}>
                       {isLocalNight ? (
-                        <NightsStayOutlinedIcon sx={{ fontSize: 44, color: 'text.secondary' }} aria-hidden />
+                        <NightsStayOutlinedIcon
+                          sx={{
+                            fontSize: 44,
+                            color: glancePhotoOn ? 'rgba(255, 255, 255, 0.95)' : 'text.secondary',
+                            filter: glancePhotoOn ? glancePhotoIconDropShadow : undefined,
+                          }}
+                          aria-hidden
+                        />
                       ) : icon ? (
                         <Box
                           component="img"
                           alt={description || 'Weather icon'}
                           src={`https://openweathermap.org/img/wn/${icon}@2x.png`}
-                          sx={{ width: 44, height: 44, display: 'block' }}
+                          sx={{
+                            width: 44,
+                            height: 44,
+                            display: 'block',
+                            filter: glancePhotoOn ? glancePhotoIconDropShadow : undefined,
+                          }}
                         />
                       ) : (
-                        <WbSunnyOutlinedIcon sx={{ fontSize: 40 }} aria-hidden />
+                        <WbSunnyOutlinedIcon
+                          sx={{
+                            fontSize: 40,
+                            color: glancePhotoOn ? 'rgba(255, 255, 255, 0.95)' : 'text.secondary',
+                            filter: glancePhotoOn ? glancePhotoIconDropShadow : undefined,
+                          }}
+                          aria-hidden
+                        />
                       )}
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textAlign: 'center' }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          ...glancePhotoTextSx,
+                          fontWeight: 700,
+                          textAlign: 'center',
+                        }}
+                      >
                         {description}
                       </Typography>
                     </Stack>
                   </Stack>
 
-                  <Button
-                    variant="outlined"
-                    disabled={!isLoggedIn || isSaving || Boolean(matchingFavorite)}
-                    onClick={matchingFavorite ? undefined : handleSaveCity}
-                    sx={{ borderRadius: 999, fontWeight: 700, textTransform: 'none', px: 2, py: 0.75, flexShrink: 0 }}
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    justifyContent={{ xs: 'flex-start', md: 'flex-end' }}
+                    flexWrap="wrap"
+                    useFlexGap
+                    sx={{ flexShrink: 0 }}
                   >
-                    {isSaving ? 'Saving...' : matchingFavorite ? 'Saved' : 'Save City'}
-                  </Button>
-                  {isLoggedIn && matchingFavorite ? (
                     <Button
-                      variant="text"
-                      disabled={isSaving}
-                      onClick={handleUnsaveCity}
-                      sx={{ borderRadius: 999, fontWeight: 800, textTransform: 'none', px: 1.5, py: 0.75, flexShrink: 0 }}
+                      variant="outlined"
+                      disabled={!isLoggedIn || isSaving || isUpdatingHomeCity || Boolean(matchingFavorite)}
+                      onClick={matchingFavorite ? undefined : handleSaveCity}
+                      sx={{
+                        borderRadius: 999,
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        px: 2,
+                        py: 0.75,
+                        flexShrink: 0,
+                        ...(glancePhotoOn
+                          ? {
+                              color: 'rgba(255, 255, 255, 0.96)',
+                              borderColor: 'rgba(255, 255, 255, 0.72)',
+                              textShadow: GLANCE_PHOTO_TEXT_SHADOW,
+                              '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255, 255, 255, 0.12)' },
+                            }
+                          : {}),
+                      }}
                     >
-                      Unsave
+                      {isSaving ? 'Saving...' : matchingFavorite ? 'Saved' : 'Save City'}
                     </Button>
-                  ) : null}
+                    {isLoggedIn && matchingFavorite ? (
+                      <Button
+                        variant="text"
+                        disabled={isSaving || isUpdatingHomeCity}
+                        onClick={handleUnsaveCity}
+                        sx={{
+                          borderRadius: 999,
+                          fontWeight: 800,
+                          textTransform: 'none',
+                          px: 1.5,
+                          py: 0.75,
+                          flexShrink: 0,
+                          ...(glancePhotoOn
+                            ? {
+                                color: 'rgba(255, 255, 255, 0.95)',
+                                textShadow: GLANCE_PHOTO_TEXT_SHADOW,
+                                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' },
+                              }
+                            : {}),
+                        }}
+                      >
+                        Unsave
+                      </Button>
+                    ) : null}
+                    {isLoggedIn ? (
+                      <Button
+                        variant={isActiveHomeCity ? 'contained' : 'outlined'}
+                        color="primary"
+                        disabled={isActiveHomeCity || isUpdatingHomeCity || isSaving}
+                        onClick={() => void handleSetHomeCity()}
+                        sx={{
+                          borderRadius: 999,
+                          fontWeight: 700,
+                          textTransform: 'none',
+                          px: 2,
+                          py: 0.75,
+                          flexShrink: 0,
+                          ...(glancePhotoOn && !isActiveHomeCity
+                            ? {
+                                color: 'rgba(255, 255, 255, 0.96)',
+                                borderColor: 'rgba(255, 255, 255, 0.72)',
+                                textShadow: GLANCE_PHOTO_TEXT_SHADOW,
+                                '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255, 255, 255, 0.12)' },
+                              }
+                            : {}),
+                        }}
+                      >
+                        {isUpdatingHomeCity ? 'Updating...' : myCityButtonLabel}
+                      </Button>
+                    ) : null}
+                  </Stack>
                 </Box>
                 {saveError ? (
-                  <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 650 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'error.main',
+                      fontWeight: 650,
+                      ...(glancePhotoOn ? { textShadow: GLANCE_PHOTO_TEXT_SHADOW } : {}),
+                    }}
+                  >
                     {saveError}
                   </Typography>
                 ) : saveSuccess ? (
-                  <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 650 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'success.main',
+                      fontWeight: 650,
+                      ...(glancePhotoOn ? { textShadow: GLANCE_PHOTO_TEXT_SHADOW } : {}),
+                    }}
+                  >
                     Saved to favorites.
+                  </Typography>
+                ) : null}
+                {homeCityError ? (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'error.main',
+                      fontWeight: 650,
+                      ...(glancePhotoOn ? { textShadow: GLANCE_PHOTO_TEXT_SHADOW } : {}),
+                    }}
+                  >
+                    {homeCityError}
                   </Typography>
                 ) : null}
               </Stack>
             </Paper>
 
-            <Paper sx={{ ...cardSx, p: { xs: 2.25, md: 3 } }}>
-              <Typography sx={{ fontWeight: 950, letterSpacing: -0.3 }}>5-Day Forecast</Typography>
-              <Box
-                sx={{
-                  mt: 2,
-                  display: 'grid',
-                  gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))', lg: 'repeat(5, minmax(0, 1fr))' },
-                  gap: 1.25,
-                }}
-              >
-                {forecastCards.map((item) => (
-                  <Box
-                    key={item.key}
+            <Paper
+              sx={{
+                ...cardSx,
+                ...(isGuest ? lockedCardSx : null),
+                p: { xs: 2.25, md: 3 },
+              }}
+            >
+              <Box sx={isGuest ? guestBlurLayerSx : null}>
+                <Typography sx={{ fontWeight: 950, letterSpacing: -0.3, color: 'text.primary' }}>5-Day Forecast</Typography>
+                <Box
+                  sx={{
+                    mt: 2,
+                    display: 'grid',
+                    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))', lg: 'repeat(5, minmax(0, 1fr))' },
+                    gap: 1.25,
+                  }}
+                >
+                  {forecastCards.map((item) => (
+                    <Box
+                      key={item.key}
+                      sx={{
+                        p: 1.25,
+                        minHeight: 150,
+                        borderRadius: '18px',
+                        border: '1px solid',
+                        borderColor: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.08)',
+                        bgcolor: darkMode ? '#121212' : 'background.default',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <Typography sx={{ fontWeight: 900, color: 'text.primary' }}>{item.day}</Typography>
+                      {item.icon ? (
+                        <Box
+                          component="img"
+                          alt={item.description || 'Forecast icon'}
+                          src={`https://openweathermap.org/img/wn/${item.icon}@2x.png`}
+                          sx={{ mt: 0.5, width: 44, height: 44, display: 'block', mx: 'auto' }}
+                        />
+                      ) : (
+                        <WbSunnyOutlinedIcon sx={{ mt: 0.75, fontSize: 40, color: 'text.secondary' }} />
+                      )}
+                      <Typography variant="body2" sx={{ mt: 0.75, color: 'text.primary', fontWeight: 850 }}>
+                        Highest: {item.high}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                        Lowest: {item.low}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+              {isGuest ? (
+                <Box sx={guestSectionOverlaySx} role="presentation">
+                  <Typography
                     sx={{
-                      p: 1.25,
-                      minHeight: 150,
-                      borderRadius: '18px',
-                      border: '1px solid',
-                      borderColor: 'rgba(15, 23, 42, 0.08)',
-                      bgcolor: '#f8f9fa',
-                      textAlign: 'center',
+                      fontWeight: 900,
+                      color: 'text.primary',
+                      maxWidth: 280,
+                      lineHeight: 1.35,
+                      textShadow: darkMode ? '0 1px 12px rgba(0,0,0,0.75)' : '0 1px 10px rgba(255,255,255,0.9)',
                     }}
                   >
-                    <Typography sx={{ fontWeight: 900 }}>{item.day}</Typography>
-                    {item.icon ? (
-                      <Box
-                        component="img"
-                        alt={item.description || 'Forecast icon'}
-                        src={`https://openweathermap.org/img/wn/${item.icon}@2x.png`}
-                        sx={{ mt: 0.5, width: 44, height: 44, display: 'block', mx: 'auto' }}
-                      />
-                    ) : (
-                      <WbSunnyOutlinedIcon sx={{ mt: 0.75, fontSize: 40 }} />
-                    )}
-                    <Typography variant="body2" sx={{ mt: 0.75, color: 'text.primary', fontWeight: 850 }}>
-                      Highest: {item.high}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                      Lowest: {item.low}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
+                    Register to unlock extended forecasts.
+                  </Typography>
+                </Box>
+              ) : null}
             </Paper>
 
             <Paper
@@ -780,34 +1358,46 @@ export default function DashboardPage({ isLoggedIn = false }) {
                 flexDirection: 'column',
               }}
             >
-              <Typography sx={{ fontWeight: 950, letterSpacing: -0.3 }}>Temperature Trend (24h)</Typography>
+              <Typography sx={{ fontWeight: 950, letterSpacing: -0.3, color: 'text.primary' }}>
+                Temperature Trend (24h)
+              </Typography>
               <Box sx={!isLoggedIn ? lockedContentSx : null}>
                 <Box sx={{ mt: 2, height: { xs: 200, md: '100%' }, minHeight: { md: 240 } }}>
                   {hourlyTemperatureSeries.length > 1 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={hourlyTemperatureSeries} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-                        <CartesianGrid stroke="rgba(15, 23, 42, 0.08)" strokeDasharray="4 4" />
-                        <XAxis dataKey="time" tick={{ fontSize: 12, fontWeight: 700 }} interval="preserveStartEnd" />
+                        <CartesianGrid stroke={chartGridStroke} strokeDasharray="4 4" />
+                        <XAxis
+                          dataKey="time"
+                          tick={chartAxisTick}
+                          interval="preserveStartEnd"
+                          axisLine={{ stroke: chartAxisLineStroke }}
+                          tickLine={{ stroke: chartAxisLineStroke }}
+                        />
                         <YAxis
-                          tick={{ fontSize: 12, fontWeight: 700 }}
-                          tickFormatter={(value) => `${Math.round(Number(value))}°C`}
+                          tick={chartAxisTickY}
+                          tickFormatter={(value) => `${Math.round(Number(value))}°${tempUnitSuffix}`}
                           width={44}
+                          axisLine={{ stroke: chartAxisLineStroke }}
+                          tickLine={{ stroke: chartAxisLineStroke }}
                         />
                         <Tooltip
-                          formatter={(value) => [`${Math.round(Number(value))}°C`, 'Temp']}
-                          labelFormatter={(_, payload) => {
-                            const row = payload?.[0]?.payload
-                            const label = row?.time12 ?? row?.time
-                            return label ? `Time: ${label}` : 'Time'
-                          }}
+                          content={<CustomTooltip useFahrenheit={useFahrenheit} />}
+                          cursor={false}
+                          wrapperStyle={{ outline: 'none' }}
                         />
                         <Line
                           type="monotone"
-                          dataKey="temperatureCelsius"
-                          stroke="#0f172a"
+                          dataKey="temperatureDisplay"
+                          stroke={chartLineStroke}
                           strokeWidth={3}
                           dot={false}
-                          activeDot={{ r: 5 }}
+                          activeDot={{
+                            r: 6,
+                            fill: '#ffffff',
+                            stroke: '#121212',
+                            strokeWidth: 2,
+                          }}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -817,8 +1407,8 @@ export default function DashboardPage({ isLoggedIn = false }) {
                         height: '100%',
                         borderRadius: '18px',
                         border: '1px dashed',
-                        borderColor: 'rgba(15, 23, 42, 0.12)',
-                        bgcolor: '#f8f9fa',
+                        borderColor: darkMode ? 'rgba(255, 255, 255, 0.18)' : 'rgba(15, 23, 42, 0.12)',
+                        bgcolor: darkMode ? '#121212' : 'background.default',
                         display: 'grid',
                         placeItems: 'center',
                         textAlign: 'center',
@@ -848,158 +1438,139 @@ export default function DashboardPage({ isLoggedIn = false }) {
             <Paper
               sx={{
                 ...cardSx,
-                ...(!isLoggedIn ? lockedCardSx : null),
+                ...(isGuest ? lockedCardSx : null),
                 p: { xs: 2.25, md: 2.5 },
                 display: 'flex',
                 flexDirection: 'column',
                 minHeight: 0,
               }}
             >
-              <Box sx={{ ...(!isLoggedIn ? lockedContentSx : null), display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2, flexShrink: 0 }}>Favorite Cities</Typography>
-                <Box
-                  sx={(theme) => {
-                    const gapPx = parseFloat(theme.spacing(1.25))
-                    const listHeightPx =
-                      FAVORITE_LIST_VISIBLE_ROWS * FAVORITE_LIST_ROW_PX +
-                      (FAVORITE_LIST_VISIBLE_ROWS - 1) * gapPx
-                    return {
-                      mt: 1.75,
-                      height: listHeightPx,
-                      minHeight: listHeightPx,
-                      maxHeight: listHeightPx,
-                      boxSizing: 'border-box',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 1.25,
-                      overflowY: 'auto',
-                      scrollbarGutter: 'stable',
-                      scrollbarWidth: 'thin',
-                      scrollbarColor: 'rgba(15, 23, 42, 0.18) transparent',
-                      '&::-webkit-scrollbar': { width: 6 },
-                      '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
-                      '&::-webkit-scrollbar-thumb': {
-                        backgroundColor: 'rgba(15, 23, 42, 0.12)',
-                        borderRadius: 999,
-                      },
-                      '&::-webkit-scrollbar-thumb:hover': {
-                        backgroundColor: 'rgba(15, 23, 42, 0.28)',
-                      },
-                    }
-                  }}
-                >
-                  {isFavoritesLoading ? (
-                    <Box
-                      sx={{
-                        flex: 1,
-                        minHeight: 0,
+              <Box sx={isGuest ? guestBlurLayerSx : null}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                  <Typography sx={{ fontWeight: 900, letterSpacing: -0.2, flexShrink: 0, color: 'text.primary' }}>
+                    Recent Searches
+                  </Typography>
+                  <Box
+                    sx={(theme) => {
+                      const gapPx = parseFloat(theme.spacing(1.25))
+                      const listHeightPx =
+                        FAVORITE_LIST_VISIBLE_ROWS * FAVORITE_LIST_ROW_PX +
+                        (FAVORITE_LIST_VISIBLE_ROWS - 1) * gapPx
+                      return {
+                        mt: 1.75,
+                        height: listHeightPx,
+                        minHeight: listHeightPx,
+                        maxHeight: listHeightPx,
+                        boxSizing: 'border-box',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 1.25,
-                        py: 0.25,
-                      }}
-                    >
-                      {[0, 1, 2].map((i) => (
-                        <Skeleton
-                          key={i}
-                          variant="rounded"
-                          height={FAVORITE_LIST_ROW_PX}
-                          sx={{ flexShrink: 0, borderRadius: '18px', bgcolor: 'rgba(15, 23, 42, 0.06)' }}
-                        />
-                      ))}
-                    </Box>
-                  ) : favoritesError ? (
-                    <Box
-                      sx={{
-                        flex: 1,
-                        minHeight: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        px: 2,
-                        textAlign: 'center',
-                      }}
-                    >
-                      <Typography sx={{ color: 'error.main', fontWeight: 850 }}>{favoritesError}</Typography>
-                    </Box>
-                  ) : favoriteCities.length === 0 ? (
-                    <Box
-                      sx={{
-                        flex: 1,
-                        minHeight: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        px: 2,
-                        textAlign: 'center',
-                      }}
-                    >
-                      <Typography sx={{ color: 'rgba(15, 23, 42, 0.45)', fontWeight: 650 }}>
-                        No favorites yet. Search a city to add!
-                      </Typography>
-                    </Box>
-                  ) : (
-                    favoriteCities.map((city) => (
+                        overflowY: 'auto',
+                        scrollbarGutter: 'stable',
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: darkMode
+                          ? 'rgba(255, 255, 255, 0.22) transparent'
+                          : 'rgba(15, 23, 42, 0.18) transparent',
+                        '&::-webkit-scrollbar': { width: 6 },
+                        '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
+                        '&::-webkit-scrollbar-thumb': {
+                          backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.16)' : 'rgba(15, 23, 42, 0.12)',
+                          borderRadius: 999,
+                        },
+                        '&::-webkit-scrollbar-thumb:hover': {
+                          backgroundColor: darkMode ? 'rgba(255, 255, 255, 0.28)' : 'rgba(15, 23, 42, 0.28)',
+                        },
+                      }
+                    }}
+                  >
+                    {recentSearches.length === 0 ? (
                       <Box
-                        key={city.id ?? city.cityName}
-                        component="button"
-                        type="button"
-                        onClick={() => void handleFavoriteCityClick(city.cityName)}
-                        title={`Search weather for ${city.cityName}`}
-                        aria-label={`Search weather for ${city.cityName}`}
                         sx={{
-                          flexShrink: 0,
-                          boxSizing: 'border-box',
-                          height: FAVORITE_LIST_ROW_PX,
-                          minHeight: FAVORITE_LIST_ROW_PX,
-                          px: 1.5,
-                          py: 1.25,
+                          flex: 1,
+                          minHeight: 0,
                           display: 'flex',
                           alignItems: 'center',
-                          borderRadius: '18px',
-                          border: '1px solid',
-                          borderColor: 'rgba(15, 23, 42, 0.06)',
-                          bgcolor: '#f8f9fa',
-                          minWidth: 0,
-                          width: '100%',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          font: 'inherit',
-                          color: 'inherit',
-                          transition: 'background-color 140ms ease',
-                          '&:hover': {
-                            bgcolor: 'rgba(15, 23, 42, 0.07)',
-                          },
-                          '&:focus-visible': {
-                            outline: '2px solid',
-                            outlineColor: 'primary.main',
-                            outlineOffset: 2,
-                          },
+                          justifyContent: 'center',
+                          px: 2,
+                          textAlign: 'center',
                         }}
                       >
-                        <Typography
-                          title={city.cityName}
-                          sx={{
-                            fontWeight: 800,
-                            width: '100%',
-                            minWidth: 0,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            pointerEvents: 'none',
-                          }}
-                        >
-                          {city.cityName}
+                        <Typography sx={{ color: 'text.secondary', fontWeight: 650 }}>
+                          No recent searches yet. Search a city to see it here.
                         </Typography>
                       </Box>
-                    ))
-                  )}
+                    ) : (
+                      recentSearches.map((cityName) => (
+                        <Box
+                          key={cityName}
+                          component="button"
+                          type="button"
+                          onClick={() => void handleSearch(cityName)}
+                          title={`Search weather for ${cityName}`}
+                          aria-label={`Search weather for ${cityName}`}
+                          sx={{
+                            flexShrink: 0,
+                            boxSizing: 'border-box',
+                            height: FAVORITE_LIST_ROW_PX,
+                            minHeight: FAVORITE_LIST_ROW_PX,
+                            px: 1.5,
+                            py: 1.25,
+                            display: 'flex',
+                            alignItems: 'center',
+                            borderRadius: '18px',
+                            border: '1px solid',
+                            borderColor: darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(15, 23, 42, 0.06)',
+                            bgcolor: darkMode ? '#121212' : 'background.default',
+                            minWidth: 0,
+                            width: '100%',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            font: 'inherit',
+                            color: 'text.primary',
+                            transition: 'background-color 140ms ease',
+                            '&:hover': {
+                              bgcolor: darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.07)',
+                            },
+                            '&:focus-visible': {
+                              outline: '2px solid',
+                              outlineColor: 'primary.main',
+                              outlineOffset: 2,
+                            },
+                          }}
+                        >
+                          <Typography
+                            title={cityName}
+                            sx={{
+                              fontWeight: 800,
+                              width: '100%',
+                              minWidth: 0,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              pointerEvents: 'none',
+                              color: 'text.primary',
+                            }}
+                          >
+                            {cityName}
+                          </Typography>
+                        </Box>
+                      ))
+                    )}
+                  </Box>
                 </Box>
               </Box>
-              {!isLoggedIn ? (
-                <Box sx={lockedOverlaySx}>
-                  <Typography sx={{ fontWeight: 900, color: 'text.primary' }}>
-                    Register to unlock analytics and favorites.
+              {isGuest ? (
+                <Box sx={guestSectionOverlaySx} role="presentation">
+                  <Typography
+                    sx={{
+                      fontWeight: 900,
+                      color: 'text.primary',
+                      maxWidth: 260,
+                      lineHeight: 1.35,
+                      textShadow: darkMode ? '0 1px 12px rgba(0,0,0,0.75)' : '0 1px 10px rgba(255,255,255,0.9)',
+                    }}
+                  >
+                    Sign in to see search history.
                   </Typography>
                 </Box>
               ) : null}
@@ -1010,9 +1581,11 @@ export default function DashboardPage({ isLoggedIn = false }) {
                 <Box sx={metricIconSx('#e0f2fe', '#0369a1')}>
                   <UmbrellaOutlinedIcon fontSize="small" />
                 </Box>
-                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2 }}>Chances of Rain</Typography>
+                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2, color: 'text.primary' }}>
+                  Chances of Rain
+                </Typography>
               </Stack>
-              <Typography variant="h5" sx={{ mt: 1, fontWeight: 950 }}>
+              <Typography variant="h5" sx={{ mt: 1, fontWeight: 950, color: 'text.primary' }}>
                 {rainChance}
               </Typography>
             </Paper>
@@ -1022,9 +1595,9 @@ export default function DashboardPage({ isLoggedIn = false }) {
                 <Box sx={metricIconSx('#ecfeff', '#0f766e')}>
                   <AirOutlinedIcon fontSize="small" />
                 </Box>
-                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2 }}>Wind Speed</Typography>
+                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2, color: 'text.primary' }}>Wind Speed</Typography>
               </Stack>
-              <Typography variant="h5" sx={{ mt: 1, fontWeight: 950 }}>
+              <Typography variant="h5" sx={{ mt: 1, fontWeight: 950, color: 'text.primary' }}>
                 {windSpeed}
               </Typography>
             </Paper>
@@ -1034,9 +1607,9 @@ export default function DashboardPage({ isLoggedIn = false }) {
                 <Box sx={metricIconSx('#e0f2fe', '#075985')}>
                   <WaterDropOutlinedIcon fontSize="small" />
                 </Box>
-                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2 }}>Humidity</Typography>
+                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2, color: 'text.primary' }}>Humidity</Typography>
               </Stack>
-              <Typography variant="h5" sx={{ mt: 1, fontWeight: 950 }}>
+              <Typography variant="h5" sx={{ mt: 1, fontWeight: 950, color: 'text.primary' }}>
                 {humidity}
               </Typography>
             </Paper>
@@ -1046,7 +1619,9 @@ export default function DashboardPage({ isLoggedIn = false }) {
                 <Box sx={metricIconSx('#ede9fe', '#5b21b6')}>
                   <WbTwilightOutlinedIcon fontSize="small" />
                 </Box>
-                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2 }}>Sunrise / Sunset</Typography>
+                <Typography sx={{ fontWeight: 900, letterSpacing: -0.2, color: 'text.primary' }}>
+                  Sunrise / Sunset
+                </Typography>
               </Stack>
               <Box
                 sx={{
@@ -1058,9 +1633,9 @@ export default function DashboardPage({ isLoggedIn = false }) {
                 }}
               >
                 <Typography sx={{ color: 'text.secondary', fontWeight: 700 }}>Sunrise</Typography>
-                <Typography sx={{ fontWeight: 900 }}>{sunrise}</Typography>
+                <Typography sx={{ fontWeight: 900, color: 'text.primary' }}>{sunrise}</Typography>
                 <Typography sx={{ color: 'text.secondary', fontWeight: 700 }}>Sunset</Typography>
-                <Typography sx={{ fontWeight: 900 }}>{sunset}</Typography>
+                <Typography sx={{ fontWeight: 900, color: 'text.primary' }}>{sunset}</Typography>
               </Box>
             </Paper>
           </Stack>

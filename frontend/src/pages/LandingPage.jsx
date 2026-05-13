@@ -1,5 +1,6 @@
 /* Author: Nandar Lin */
 
+import { useState } from 'react'
 import SearchIcon from '@mui/icons-material/Search'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlineOutlined'
 import HighlightOffIcon from '@mui/icons-material/HighlightOff'
@@ -56,6 +57,14 @@ const COMPARISON = {
 
 export default function LandingPage() {
   const navigate = useNavigate()
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const handleKeyDown = (e) => {
+    if (e.key !== 'Enter') return
+    const trimmed = searchTerm.trim()
+    if (!trimmed) return
+    navigate('/dashboard', { state: { initialCity: trimmed } })
+  }
 
   const handleFeatureLearnMore = (featureTitle) => {
     switch (featureTitle) {
@@ -128,6 +137,9 @@ export default function LandingPage() {
             <Box sx={{ width: '100%', maxWidth: 760 }}>
               <TextField
                 fullWidth
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="Search any city to preview weather..."
                 aria-label="Search any city to preview weather"
                 InputProps={{

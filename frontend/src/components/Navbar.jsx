@@ -94,35 +94,97 @@ export default function Navbar({ isLoggedIn = false }) {
     navigate('/', { replace: true })
   }
 
-  const submitNavbarCitySearch = () => {
-    const q = navbarSearch.trim()
-    if (!q) return
-    navigate('/dashboard', { state: { searchCity: q } })
-  }
-
+  /** Matches LandingPage: Enter loads dashboard with `initialCity` (see DashboardPage location.state). */
   const handleNavbarSearchKeyDown = (event) => {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    submitNavbarCitySearch()
+    const trimmed = navbarSearch.trim()
+    if (!trimmed) return
+    if (mobileOpen) setMobileOpen(false)
+    navigate('/dashboard', { state: { initialCity: trimmed } })
   }
 
   const drawerItems = (
     <Box sx={{ width: 280 }} role="presentation" onClick={() => setMobileOpen(false)}>
-      <Stack direction="row" alignItems="center" spacing={1.25} sx={{ px: 2, py: 2 }}>
-        <Box component="img" src={weatherwiseLogoIcon} alt="WeatherWise" sx={{ height: 45, width: 'auto' }} />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px', px: 2, py: 2 }}>
+        <Box
+          component="img"
+          src={weatherwiseLogoIcon}
+          alt="WeatherWise"
+          sx={{
+            height: 48,
+            width: 48,
+            objectFit: 'contain',
+            display: 'block',
+            flexShrink: 0,
+          }}
+        />
         <Typography
           variant="h6"
+          component="span"
           sx={{
-            fontWeight: 800,
+            fontSize: '1.5rem',
+            fontWeight: 700,
             lineHeight: 1,
-            display: 'flex',
-            alignItems: 'center',
+            m: 0,
           }}
         >
           WeatherWise
         </Typography>
-      </Stack>
+      </Box>
       <Divider />
+      <Box
+        sx={{ px: 2, pt: 1.5, pb: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <TextField
+          size="small"
+          fullWidth
+          placeholder="Search city..."
+          variant="outlined"
+          value={navbarSearch}
+          onChange={(e) => setNavbarSearch(e.target.value)}
+          onKeyDown={handleNavbarSearchKeyDown}
+          aria-label="Search city"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" sx={{ opacity: 0.85 }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={(theme) => ({
+            mb: 2,
+            '& .MuiOutlinedInput-root': {
+              color: theme.palette.mode === 'dark' ? '#fff' : theme.palette.text.primary,
+              backgroundColor:
+                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
+              borderRadius: 2,
+              minHeight: 48,
+              py: 0.25,
+              '& fieldset': {
+                borderColor:
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.22)' : theme.palette.divider,
+              },
+              '&:hover fieldset': {
+                borderColor:
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.35)' : theme.palette.text.secondary,
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.5)' : theme.palette.primary.main,
+              },
+            },
+            '& .MuiInputBase-input': {
+              py: 1.25,
+              fontSize: '1rem',
+            },
+            '& .MuiInputAdornment-root .MuiSvgIcon-root': {
+              color: theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : theme.palette.action.active,
+            },
+          })}
+        />
+      </Box>
       <List>
         {NAV_ITEMS.map((item) => {
           const target = resolveNavTarget(item.href)
@@ -214,35 +276,46 @@ export default function Navbar({ isLoggedIn = false }) {
                 </IconButton>
               )}
 
-              <Stack direction="row" alignItems="center" spacing={1.25}>
-                <Stack
-                  component={RouterLink}
-                  to="/"
-                  direction="row"
-                  alignItems="center"
-                  spacing={1.25}
-                  sx={{ textDecoration: 'none', color: 'inherit' }}
+              <Box
+                component={RouterLink}
+                to="/"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  textDecoration: 'none',
+                  color: 'inherit',
+                  flexShrink: 0,
+                  minWidth: 0,
+                }}
+              >
+                <Box
+                  component="img"
+                  src={weatherwiseLogoIcon}
+                  alt="WeatherWise"
+                  sx={{
+                    height: { xs: 40, sm: 48 },
+                    width: { xs: 40, sm: 48 },
+                    objectFit: 'contain',
+                    display: 'block',
+                    flexShrink: 0,
+                  }}
+                />
+                <Typography
+                  variant="h6"
+                  component="span"
+                  sx={{
+                    fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                    fontWeight: 700,
+                    letterSpacing: -0.3,
+                    lineHeight: 1,
+                    whiteSpace: 'nowrap',
+                    m: 0,
+                  }}
                 >
-                  <Box
-                    component="img"
-                    src={weatherwiseLogoIcon}
-                    alt="WeatherWise"
-                    sx={{ height: 40, width: 'auto', display: 'block' }}
-                  />
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      fontWeight: 800,
-                      letterSpacing: -0.3,
-                      lineHeight: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    WeatherWise
-                  </Typography>
-                </Stack>
-              </Stack>
+                  WeatherWise
+                </Typography>
+              </Box>
             </Stack>
 
             {isMdUp ? (
@@ -301,8 +374,9 @@ export default function Navbar({ isLoggedIn = false }) {
                   ),
                 }}
                 sx={{
-                  width: { xs: 'min(320px, 52vw)', sm: 220, md: 240 },
-                  minWidth: { xs: 140, sm: 200 },
+                  display: { xs: 'none', md: 'block' },
+                  width: { md: 240 },
+                  minWidth: { md: 200 },
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 999,
                     bgcolor: 'background.default',
@@ -353,8 +427,10 @@ export default function Navbar({ isLoggedIn = false }) {
                     aria-expanded={isUserMenuOpen ? 'true' : undefined}
                   >
                     <Stack direction="row" alignItems="center" spacing={1}>
-                      <Avatar sx={{ width: 28, height: 28 }}>
-                        <AccountCircleOutlinedIcon sx={{ width: 22, height: 22 }} />
+                      <Avatar src={user?.profilePicturePath || undefined} sx={{ width: 28, height: 28 }}>
+                        {!user?.profilePicturePath ? (
+                          <AccountCircleOutlinedIcon sx={{ width: 22, height: 22 }} />
+                        ) : null}
                       </Avatar>
                       <Typography sx={{ fontWeight: 800, display: { xs: 'none', sm: 'block' } }}>
                         {displayName}

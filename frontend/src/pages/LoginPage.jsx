@@ -3,14 +3,13 @@
 import { useState } from 'react'
 import {
   Box,
-  Divider,
+  Button,
   Link,
   Paper,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import { Button } from '@mui/material'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.js'
 import { getApiErrorMessage, loginUser } from '../lib/favoritesApi.js'
@@ -123,31 +122,9 @@ export default function LoginPage() {
                 {submitError}
               </Typography>
             ) : null}
-
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ py: 0.5 }}>
-              <Divider sx={{ flexGrow: 1 }} />
-              <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                or
-              </Typography>
-              <Divider sx={{ flexGrow: 1 }} />
-            </Stack>
-
-            <Button
-              variant="outlined"
-              sx={{
-                borderRadius: 999,
-                py: 1.15,
-                fontWeight: 900,
-                borderColor: 'divider',
-                color: 'text.primary',
-                '&:hover': { borderColor: 'text.primary', bgcolor: 'transparent' },
-              }}
-            >
-              Continue with Google
-            </Button>
           </Stack>
 
-          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'center', mt: 2 }}>
             Don&apos;t have an account?{' '}
             <Link component={RouterLink} to="/register" underline="hover" sx={{ fontWeight: 800 }}>
               Register

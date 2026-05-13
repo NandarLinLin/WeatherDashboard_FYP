@@ -1,16 +1,27 @@
-# React + Vite
+# WeatherWise: Weather Analytics and Personalized Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+WeatherWise is a secure, ad-free, decoupled full-stack web utility designed to solve data fragmentation and session tracking issues found in generic commercial weather platforms. It allows registered users to track global locations simultaneously, manage personal favorite city watchlists, and evaluate historical micro-climatic trends through clear data visualizations.
 
-Currently, two official plugins are available:
+## Technical Stack
+* **Frontend Layer:** React.js, Material UI, Axios, React-Router
+* **Backend Layer:** Java 21, Spring Boot 3, Spring Security, Hibernate
+* **Database Layer:** MySQL RDBMS (ACID-Compliant Relational Design)
+* **Security Framework:** Cryptographic BCrypt hashing, Stateless JSON Web Tokens (JWT)
+* **External APIs:** OpenWeatherMap API (Real-time Meteorological Stream Data)
+* **Testing & Tools:** Postman API Lifecycle Validation, Git, GitHub
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Key Functional Features
+* **Stateless JWT Authentication:** Secure login namespaces ensuring strict user data isolation.
+* **Persistent Location Watchlists:** Add, view, and purge customized favorites grids securely stored in a relational database layout.
+* **Responsive Layout Architecture:** Smooth element scaling optimized universally for mobile, tablet, and desktop viewports down to a 400px minimum threshold.
+* **Ad-Free Clean Data Discovery:** Minimalist design interfaces built to maximize readability and reduce cognitive search fatigue.
 
-## React Compiler
+## Local Installation & Development Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Follow these sequential steps in your terminal to initialize the decoupled application workspace locally:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 1. Relational Layer Setup
+Ensure your local MySQL Server environment is running, log into your monitor, and establish the custom schema:
+```sql
+CREATE DATABASE weatherwise_db;
+USE weatherwise_db;

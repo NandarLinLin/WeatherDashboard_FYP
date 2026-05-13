@@ -41,7 +41,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Box>
-      <Footer isLoggedIn={isLoggedIn} />
+      <Footer />
     </Box>
   )
 }

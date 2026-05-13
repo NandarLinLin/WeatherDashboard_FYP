@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -34,5 +35,12 @@ public class FavoriteCity {
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "user_id", nullable = false)
   private User user;
+
+  /**
+   * Live horizontal visibility in km (from weather API). Not stored in {@code favorite_cities};
+   * use {@link com.weatherwise.weatherapi.dto.WeatherResponse#visibility()} for API payloads.
+   */
+  @Transient
+  private Double visibility;
 }
 
